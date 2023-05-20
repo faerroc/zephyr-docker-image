@@ -6,3 +6,4 @@ sleep 1
 x11vnc -display $DISPLAY -usepw -forever -quiet &
 
 exec "$@"
+
