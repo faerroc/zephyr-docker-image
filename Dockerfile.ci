@@ -3,15 +3,51 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE:-zephyrprojectrtos/ci-base:latest}
 
-ARG ZSDK_VERSION=0.16.1
+ARG ZSDK_VERSION=0.16.6
+ENV ZSDK_VERSION=$ZSDK_VERSION
+ARG KITWARE_NINJA_VERSION=1.11.1.g95dee.kitware.jobserver-1
+ENV KITWARE_NINJA_VERSION=$KITWARE_NINJA_VERSION
+ARG CCACHE_VERSION=4.9.1
+ENV CCACHE_VERSION=$CCACHE_VERSION
 ARG DOXYGEN_VERSION=1.9.4
-ARG RENODE_VERSION=1.13.3
+ENV DOXYGEN_VERSION=$DOXYGEN_VERSION
+ARG RENODE_VERSION=1.14.0
+ENV RENODE_VERSION=$RENODE_VERSION
 ARG LLVM_VERSION=16
-ARG BSIM_VERSION=v2.1
+ENV LLVM_VERSION=$LLVM_VERSION
+ARG BSIM_VERSION=v2.2
+ENV BSIM_VERSION=$BSIM_VERSION
 ARG SPARSE_VERSION=9212270048c3bd23f56c20a83d4f89b870b2b26e
+ENV SPARSE_VERSION=$SPARSE_VERSION
 ARG PROTOC_VERSION=21.7
+ENV PROTOC_VERSION=$PROTOC_VERSION
+ARG FVP_BASE_REVC_VERSION=11.24_11
+ENV FVP_BASE_REVC_VERSION=$FVP_BASE_REVC_VERSION
+ARG FVP_BASE_AEMV8R_VERSION=11.24_11
+ENV FVP_BASE_AEMV8R_VERSION=$FVP_BASE_AEMV8R_VERSION
+ARG FVP_CORSTONE300_VERSION=11.24_13
+ENV FVP_CORSTONE300_VERSION=$FVP_CORSTONE300_VERSION
+ARG FVP_CORSTONE310_VERSION=11.24_13
+ENV FVP_CORSTONE310_VERSION=$FVP_CORSTONE310_VERSION
 ARG WGET_ARGS="-q --show-progress --progress=bar:force:noscroll"
 
+# Install Kitware ninja
+# NOTE: Pre-built Kitware ninja binaries are only available for x86_64 host.
+RUN if [ "${HOSTTYPE}" = "x86_64" ]; then \
+	wget ${WGET_ARGS} https://github.com/Kitware/ninja/releases/download/v${KITWARE_NINJA_VERSION}/ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu.tar.gz && \
+	tar xf ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu.tar.gz -C /opt && \
+	ln -s /opt/ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu/ninja /usr/local/bin && \
+	rm ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu.tar.gz \
+	; fi
+
+# Install ccache
+# NOTE: Pre-built ccache binaries are only available for x86_64 host.
+RUN if [ "${HOSTTYPE}" = "x86_64" ]; then \
+	wget ${WGET_ARGS} https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-x86_64.tar.xz && \
+	tar xf ccache-${CCACHE_VERSION}-linux-x86_64.tar.xz -C /opt && \
+	ln -s /opt/ccache-${CCACHE_VERSION}-linux-x86_64/ccache /usr/local/bin && \
+	rm ccache-${CCACHE_VERSION}-linux-x86_64.tar.xz \
+	; fi
 
 # Install Doxygen (x86 only)
 # NOTE: Pre-built Doxygen binaries are only available for x86_64 host.
@@ -47,8 +83,11 @@ RUN mkdir -p /opt/bsim_west && \
 	chmod ag+w . -R && \
 	ln -s /opt/bsim_west/bsim /opt/bsim
 
+# Install cargo environment
+RUN wget -q -O-  "https://sh.rustup.rs" | sh -s -- -y
+
 # Install uefi-run utility
-RUN cargo install uefi-run --root /usr
+RUN ~/.cargo/bin/cargo install uefi-run --root /usr
 
 # Install LLVM and Clang
 RUN wget ${WGET_ARGS} https://apt.llvm.org/llvm.sh && \
@@ -82,6 +121,27 @@ RUN mkdir -p /opt/toolchains && \
 	zephyr-sdk-${ZSDK_VERSION}/setup.sh -t all -h -c && \
 	rm zephyr-sdk-${ZSDK_VERSION}_linux-${HOSTTYPE}.tar.xz
 
+# Install FVP
+#
+# Ecosystem FVP License permits redistribution (refer to the relevant license available in the container).
+RUN if [ "${HOSTTYPE}" = "x86_64" ]; then \
+	mkdir -p /opt/fvps && \
+	cd /opt/fvps && \
+	wget ${WGET_ARGS} -O- https://developer.arm.com/-/media/Files/downloads/ecosystem-models/FVP_Base_RevC-2xAEMvA_${FVP_BASE_REVC_VERSION}_Linux64.tgz | tar xz && \
+	wget ${WGET_ARGS} -O- https://developer.arm.com/-/media/Files/downloads/ecosystem-models/FVP_Base_AEMv8R_${FVP_BASE_AEMV8R_VERSION}_Linux64.tgz | tar xz && \
+	wget ${WGET_ARGS} -O- https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-300/FVP_Corstone_SSE-300_${FVP_CORSTONE300_VERSION}_Linux64.tgz | tar xz && \
+	wget ${WGET_ARGS} -O- https://developer.arm.com/-/media/Arm%20Developer%20Community/Downloads/OSS/FVP/Corstone-310/FVP_Corstone_SSE-310_${FVP_CORSTONE310_VERSION}_Linux64.tgz | tar xz && \
+	./FVP_Corstone_SSE-300.sh --no-interactive --i-agree-to-the-contained-eula && \
+	./FVP_Corstone_SSE-310.sh --no-interactive --i-agree-to-the-contained-eula && \
+	ln -s /opt/fvps/Base_RevC_AEMvA_pkg/models/Linux64_GCC-9.3/FVP_Base_RevC-2xAEMvA /usr/local/bin && \
+	ln -s /opt/fvps/AEMv8R_base_pkg/models/Linux64_GCC-9.3/FVP_BaseR_AEMv8R /usr/local/bin && \
+	ln -s /usr/local/FVP_Corstone_SSE-300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U55 /usr/local/bin && \
+	ln -s /usr/local/FVP_Corstone_SSE-300/models/Linux64_GCC-9.3/FVP_Corstone_SSE-300_Ethos-U65 /usr/local/bin && \
+	ln -s /usr/local/FVP_Corstone_SSE-310/models/Linux64_GCC-9.3/FVP_Corstone_SSE-310 /usr/local/bin && \
+	ln -s /usr/local/FVP_Corstone_SSE-310/models/Linux64_GCC-9.3/FVP_Corstone_SSE-310_Ethos-U65 /usr/local/bin && \
+	rm FVP_Corstone_SSE-300.sh FVP_Corstone_SSE-310.sh \
+	; fi
+
 # Clean up stale packages
 RUN apt-get clean -y && \
 	apt-get autoremove --purge -y && \
@@ -103,3 +163,4 @@ USER root
 ENV ZEPHYR_TOOLCHAIN_VARIANT=zephyr
 ENV PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
 ENV OVMF_FD_PATH=/usr/share/ovmf/OVMF.fd
+ENV ARMFVP_BIN_PATH=/usr/local/bin
