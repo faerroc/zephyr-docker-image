@@ -46,6 +46,16 @@ jobs:
           builder: zephyr-runner-v2-linux-arm64-4xlarge
 
     steps:
+    - name: Configure temporary directory
+      run: |
+        mkdir -p /__w/tmp
+        echo "TMPDIR=/__w/tmp" >> $GITHUB_ENV
+
+    - name: Configure container storage
+      run: |
+        sed -i 's/graphroot = .*/graphroot = "\/__w\/container_storage"/' /etc/containers/storage.conf
+        mkdir -p /__w/container_storage
+
     - name: Checkout
       uses: actions/checkout@v4
 
@@ -127,6 +137,8 @@ jobs:
         labels: ${{ steps.meta_ci.outputs.labels }}
         build-args: |
           BASE_IMAGE=${{ env.GHCR_BASE }}/${{ env.BASE_IMAGE_NAME }}:${{ steps.meta_base.outputs.version }}
+        extra-args: |
+          --pull-never
 
     - name: Build Developer image
       uses: redhat-actions/buildah-build@v2
@@ -137,6 +149,8 @@ jobs:
         labels: ${{ steps.meta_developer.outputs.labels }}
         build-args: |
           BASE_IMAGE=${{ env.GHCR_BASE }}/${{ env.CI_IMAGE_NAME }}:${{ steps.meta_ci.outputs.version }}
+        extra-args: |
+          --pull-never
 
     - name: Push base image
       if: ${{ github.event_name != 'pull_request' }}
@@ -166,6 +180,16 @@ jobs:
     if: ${{ github.event_name != 'pull_request' }}
 
     steps:
+    - name: Configure temporary directory
+      run: |
+        mkdir -p /__w/tmp
+        echo "TMPDIR=/__w/tmp" >> $GITHUB_ENV
+
+    - name: Configure container storage
+      run: |
+        sed -i 's/graphroot = .*/graphroot = "\/__w\/container_storage"/' /etc/containers/storage.conf
+        mkdir -p /__w/container_storage
+
     - name: Login to DockerHub
       if: ${{ github.event_name != 'pull_request' }}
       uses: redhat-actions/podman-login@v1
