@@ -27,26 +27,48 @@ building most Zephyr targets.
 The pre-built developer docker image is available on both GitHub Container Registry (`ghcr.io`) and
 DockerHub (`docker.io`).
 
-**GitHub Container Registry (`ghcr.io`)**
+For Zephyr 3.7 LTS, use the `v0.26-branch` or the latest `v0.26.x` release Docker image.
+
+##### GitHub Container Registry (`ghcr.io`)
+
+###### Current Zephyr versions
 
 ```
 docker run -ti -v $HOME/Work/zephyrproject:/workdir \
-           ghcr.io/zephyrproject-rtos/zephyr-build:latest
+           ghcr.io/zephyrproject-rtos/zephyr-build:main
 ```
 
-**DockerHub (`docker.io`)**
+###### Zephyr 3.7 LTS
 
 ```
 docker run -ti -v $HOME/Work/zephyrproject:/workdir \
-           docker.io/zephyrprojectrtos/zephyr-build:latest
+           ghcr.io/zephyrproject-rtos/zephyr-build:v0.26-branch
+```
+
+##### DockerHub (`docker.io`)
+
+###### Current Zephyr versions
+
+```
+docker run -ti -v $HOME/Work/zephyrproject:/workdir \
+           docker.io/zephyrprojectrtos/zephyr-build:main
+```
+
+###### Zephyr 3.7 LTS
+
+```
+docker run -ti -v $HOME/Work/zephyrproject:/workdir \
+           docker.io/zephyrprojectrtos/zephyr-build:v0.26-branch
 ```
 
 #### Building Developer Docker Image
 
-The developer docker image can be built using the following command:
+The developer docker image can be built using the following commands:
 
 ```
-docker build -f Dockerfile.devel --build-arg UID=$(id -u) --build-arg GID=$(id -g) -t zephyr-build:v<tag> .
+docker build -f Dockerfile.base --build-arg UID=$(id -u) --build-arg GID=$(id -g) -t zephyr-ci-base:v<tag> .
+docker build -f Dockerfile.ci --build-arg BASE_IMAGE=zephyr-ci-base:v<tag> -t zephyr-ci:v<tag> .
+docker build -f Dockerfile.devel --build-arg BASE_IMAGE=zephyr-ci:v<tag> -t zephyr-build:v<tag> .
 ```
 
 It can be used for building Zephyr samples and tests by mounting the Zephyr workspace into it:
