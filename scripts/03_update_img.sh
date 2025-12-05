@@ -3,6 +3,8 @@
 #
 
 cd /workdir
+rm -rf .west/
+sync
 west init
 west update
 west build -b qemu_x86 samples/hello_world
