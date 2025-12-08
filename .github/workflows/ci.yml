@@ -32,10 +32,10 @@ jobs:
     runs-on:
       group: ${{ matrix.variant.builder }}
     container:
-      image: ghcr.io/zephyrproject-rtos/image-build:v1.0.0
+      image: ghcr.io/zephyrproject-rtos/image-build:v1.1.0
 
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         variant:
         - platform: linux/amd64
@@ -46,6 +46,12 @@ jobs:
           builder: zephyr-runner-v2-linux-arm64-4xlarge
 
     steps:
+    - name: Print cloud service information
+      run: |
+        echo "ZEPHYR_RUNNER_CLOUD_PROVIDER = ${ZEPHYR_RUNNER_CLOUD_PROVIDER}"
+        echo "ZEPHYR_RUNNER_CLOUD_NODE = ${ZEPHYR_RUNNER_CLOUD_NODE}"
+        echo "ZEPHYR_RUNNER_CLOUD_POD = ${ZEPHYR_RUNNER_CLOUD_POD}"
+
     - name: Configure temporary directory
       run: |
         mkdir -p /__w/tmp
@@ -120,6 +126,47 @@ jobs:
           type=ref,event=tag
           type=ref,event=pr
 
+    - name: Generate base image build arguments
+      id: buildarg_base
+      run: |
+        {
+          echo "args<<EOF"
+          if [ "${ZEPHYR_RUNNER_CLOUD_PROVIDER}" == "Hetzner" ]; then
+            echo "UBUNTU_MIRROR_ARCHIVE=mirror.hetzner.com/ubuntu/packages"
+            echo "UBUNTU_MIRROR_SECURITY=mirror.hetzner.com/ubuntu/security"
+            echo "UBUNTU_MIRROR_PORTS=mirror.hetzner.com/ubuntu-ports/packages"
+          fi
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
+    - name: Generate CI image build arguments
+      id: buildarg_ci
+      run: |
+        {
+          echo "args<<EOF"
+          echo "BASE_IMAGE=${{ env.GHCR_BASE }}/${{ env.BASE_IMAGE_NAME }}:${{ steps.meta_base.outputs.version }}"
+          if [ "${ZEPHYR_RUNNER_CLOUD_PROVIDER}" == "Hetzner" ]; then
+            echo "UBUNTU_MIRROR_ARCHIVE=mirror.hetzner.com/ubuntu/packages"
+            echo "UBUNTU_MIRROR_SECURITY=mirror.hetzner.com/ubuntu/security"
+            echo "UBUNTU_MIRROR_PORTS=mirror.hetzner.com/ubuntu-ports/packages"
+          fi
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
+    - name: Generate Developer image build arguments
+      id: buildarg_developer
+      run: |
+        {
+          echo "args<<EOF"
+          echo "BASE_IMAGE=${{ env.GHCR_BASE }}/${{ env.CI_IMAGE_NAME }}:${{ steps.meta_ci.outputs.version }}"
+          if [ "${ZEPHYR_RUNNER_CLOUD_PROVIDER}" == "Hetzner" ]; then
+            echo "UBUNTU_MIRROR_ARCHIVE=mirror.hetzner.com/ubuntu/packages"
+            echo "UBUNTU_MIRROR_SECURITY=mirror.hetzner.com/ubuntu/security"
+            echo "UBUNTU_MIRROR_PORTS=mirror.hetzner.com/ubuntu-ports/packages"
+          fi
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
     - name: Build base image
       uses: redhat-actions/buildah-build@v2
       with:
@@ -127,6 +174,7 @@ jobs:
         containerfiles: Dockerfile.base
         tags: ${{ steps.meta_base.outputs.tags }}
         labels: ${{ steps.meta_base.outputs.labels }}
+        build-args: ${{ steps.buildarg_base.outputs.args }}
 
     - name: Build CI image
       uses: redhat-actions/buildah-build@v2
@@ -135,8 +183,7 @@ jobs:
         containerfiles: Dockerfile.ci
         tags: ${{ steps.meta_ci.outputs.tags }}
         labels: ${{ steps.meta_ci.outputs.labels }}
-        build-args: |
-          BASE_IMAGE=${{ env.GHCR_BASE }}/${{ env.BASE_IMAGE_NAME }}:${{ steps.meta_base.outputs.version }}
+        build-args: ${{ steps.buildarg_ci.outputs.args }}
         extra-args: |
           --pull-never
 
@@ -147,8 +194,7 @@ jobs:
         containerfiles: Dockerfile.devel
         tags: ${{ steps.meta_developer.outputs.tags }}
         labels: ${{ steps.meta_developer.outputs.labels }}
-        build-args: |
-          BASE_IMAGE=${{ env.GHCR_BASE }}/${{ env.CI_IMAGE_NAME }}:${{ steps.meta_ci.outputs.version }}
+        build-args: ${{ steps.buildarg_developer.outputs.args }}
         extra-args: |
           --pull-never
 
@@ -180,6 +226,12 @@ jobs:
     if: ${{ github.event_name != 'pull_request' }}
 
     steps:
+    - name: Print cloud service information
+      run: |
+        echo "ZEPHYR_RUNNER_CLOUD_PROVIDER = ${ZEPHYR_RUNNER_CLOUD_PROVIDER}"
+        echo "ZEPHYR_RUNNER_CLOUD_NODE = ${ZEPHYR_RUNNER_CLOUD_NODE}"
+        echo "ZEPHYR_RUNNER_CLOUD_POD = ${ZEPHYR_RUNNER_CLOUD_POD}"
+
     - name: Configure temporary directory
       run: |
         mkdir -p /__w/tmp
