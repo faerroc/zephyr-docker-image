@@ -8,17 +8,17 @@ FROM ${BASE_IMAGE:-zephyrprojectrtos/ci-base:latest}
 ARG USERNAME=user
 ARG WGET_ARGS="-q --show-progress --progress=bar:force:noscroll"
 
-ARG ZSDK_VERSION=0.17.4
+ARG ZSDK_VERSION=1.0.1
 ENV ZSDK_VERSION=$ZSDK_VERSION
 
 # Install Zephyr SDK
 RUN <<EOF
 	mkdir -p /opt/toolchains
 	cd /opt/toolchains
-	wget ${WGET_ARGS} https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${ZSDK_VERSION}/zephyr-sdk-${ZSDK_VERSION}_linux-${HOSTTYPE}.tar.xz
-	tar xf zephyr-sdk-${ZSDK_VERSION}_linux-${HOSTTYPE}.tar.xz
-	zephyr-sdk-${ZSDK_VERSION}/setup.sh -t all -h -c
-	rm zephyr-sdk-${ZSDK_VERSION}_linux-${HOSTTYPE}.tar.xz
+	wget ${WGET_ARGS} https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${ZSDK_VERSION}/zephyr-sdk-${ZSDK_VERSION}_linux-${HOSTTYPE}_gnu.tar.xz
+	tar xf zephyr-sdk-${ZSDK_VERSION}_linux-${HOSTTYPE}_gnu.tar.xz
+	zephyr-sdk-${ZSDK_VERSION}/setup.sh -l -t all -h -c
+	rm zephyr-sdk-${ZSDK_VERSION}_linux-${HOSTTYPE}_gnu.tar.xz
 EOF
 
 # Run the Zephyr SDK setup script as 'user' in order to ensure that the
@@ -34,6 +34,33 @@ RUN <<EOF
 EOF
 
 USER root
+
+# Install TriCore GCC for AURIX (x86_64 only)
+RUN <<EOF
+	if [ "${HOSTTYPE}" = "x86_64" ]; then
+		wget ${WGET_ARGS} https://github.com/Linumiz/aurix-gcc-toolchain/releases/download/v11.3.0/aurixgcc_03-2026_Linux_x86-x64.zip
+		mkdir -p /opt/toolchains/tricore-elf
+		unzip -o aurixgcc_03-2026_Linux_x86-x64.zip -d /opt/toolchains/tricore-elf
+		chmod +x /opt/toolchains/tricore-elf/bin/*
+		chmod +x /opt/toolchains/tricore-elf/tricore-elf/bin/*
+		rm aurixgcc_03-2026_Linux_x86-x64.zip
+	fi
+EOF
+
+# Install TriCore QEMU for AURIX (x86_64 only)
+RUN <<EOF
+	if [ "${HOSTTYPE}" = "x86_64" ]; then
+		apt-get update
+		apt-get install -y --no-install-recommends libpixman-1-0
+		wget ${WGET_ARGS} https://github.com/linumiz/qemu-tricore/releases/download/v1.0.0/qemu-tricore-linux-x86_64.tar.gz
+		mkdir -p /opt/qemu-tricore
+		tar -xzf qemu-tricore-linux-x86_64.tar.gz -C /opt/qemu-tricore
+		rm qemu-tricore-linux-x86_64.tar.gz
+		apt-get clean
+		rm -rf /var/lib/apt/lists/*
+	fi
+EOF
+ENV PATH="/opt/qemu-tricore/bin:${PATH}"
 
 # Set build environment variables
 ENV ZEPHYR_TOOLCHAIN_VARIANT=zephyr

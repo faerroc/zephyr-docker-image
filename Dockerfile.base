@@ -15,15 +15,15 @@ ARG UBUNTU_MIRROR_PORTS=ports.ubuntu.com/ubuntu-ports
 
 ARG KITWARE_NINJA_VERSION=1.11.1.g95dee.kitware.jobserver-1
 ENV KITWARE_NINJA_VERSION=$KITWARE_NINJA_VERSION
-ARG CCACHE_VERSION=4.9.1
+ARG CCACHE_VERSION=4.13.2
 ENV CCACHE_VERSION=$CCACHE_VERSION
-ARG DOXYGEN_VERSION=1.15.0
+ARG DOXYGEN_VERSION=1.16.1
 ENV DOXYGEN_VERSION=$DOXYGEN_VERSION
 ARG RENODE_VERSION=1.16.0
 ENV RENODE_VERSION=$RENODE_VERSION
 ARG LLVM_VERSION=20
 ENV LLVM_VERSION=$LLVM_VERSION
-ARG BSIM_VERSION=v3.0
+ARG BSIM_VERSION=v3.0.1
 ENV BSIM_VERSION=$BSIM_VERSION
 ARG SPARSE_VERSION=9212270048c3bd23f56c20a83d4f89b870b2b26e
 ENV SPARSE_VERSION=$SPARSE_VERSION
@@ -41,6 +41,8 @@ ARG FVP_CORSTONE315_VERSION=11.27_42
 ENV FVP_CORSTONE315_VERSION=$FVP_CORSTONE315_VERSION
 ARG FVP_CORSTONE320_VERSION=11.27_25
 ENV FVP_CORSTONE320_VERSION=$FVP_CORSTONE320_VERSION
+ARG FVP_CORSTONE1000_A320_VERSION=11.30_27
+ENV FVP_CORSTONE1000_A320_VERSION=$FVP_CORSTONE1000_A320_VERSION
 
 # Set default shell during Docker image build to bash
 SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
@@ -76,7 +78,6 @@ RUN <<EOF
 		bison \
 		build-essential \
 		ca-certificates \
-		ccache \
 		chrpath \
 		cmake \
 		cpio \
@@ -92,6 +93,7 @@ RUN <<EOF
 		gcc \
 		gcovr \
 		gdb \
+		gdisk \
 		git \
 		git-core \
 		gnupg \
@@ -116,7 +118,6 @@ RUN <<EOF
 		locales \
 		make \
 		net-tools \
-		ninja-build \
 		nodejs \
 		npm \
 		openssh-client \
@@ -135,6 +136,7 @@ RUN <<EOF
 		sudo \
 		texinfo \
 		unzip \
+		uuid-runtime \
 		valgrind \
 		wget \
 		ovmf \
@@ -218,7 +220,7 @@ RUN <<EOF
 	pip install --no-cache-dir \
 		-r https://raw.githubusercontent.com/zephyrproject-rtos/zephyr/main/scripts/requirements.txt \
 		-r https://raw.githubusercontent.com/zephyrproject-rtos/mcuboot/main/scripts/requirements.txt \
-		-r https://raw.githubusercontent.com/zephyrproject-rtos/trusted-firmware-m/main/tools/requirements.txt \
+		-r https://raw.githubusercontent.com/zephyrproject-rtos/trusted-firmware-m/zephyr_tf-m_v2.2.2/tools/requirements.txt \
 		'esptool>=5.0.2' \
 		GitPython \
 		junitparser \
@@ -243,25 +245,21 @@ EOF
 ENV PATH=${PYTHON_VENV_PATH}/bin:$PATH
 
 # Install Kitware ninja
-# NOTE: Pre-built Kitware ninja binaries are only available for x86_64 host.
 RUN <<EOF
-	if [ "${HOSTTYPE}" = "x86_64" ]; then
-		wget ${WGET_ARGS} https://github.com/Kitware/ninja/releases/download/v${KITWARE_NINJA_VERSION}/ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu.tar.gz
-		tar xf ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu.tar.gz -C /opt
-		ln -s /opt/ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu/ninja /usr/local/bin
-		rm ninja-${KITWARE_NINJA_VERSION}_x86_64-linux-gnu.tar.gz
-	fi
+	NINJA_BASENAME=ninja-${KITWARE_NINJA_VERSION}_${HOSTTYPE}-linux-gnu
+	wget ${WGET_ARGS} https://github.com/Kitware/ninja/releases/download/v${KITWARE_NINJA_VERSION}/${NINJA_BASENAME}.tar.gz
+	tar xf ${NINJA_BASENAME}.tar.gz -C /opt
+	ln -s /opt/${NINJA_BASENAME}/ninja /usr/local/bin
+	rm ${NINJA_BASENAME}.tar.gz
 EOF
 
 # Install ccache
-# NOTE: Pre-built ccache binaries are only available for x86_64 host.
 RUN <<EOF
-	if [ "${HOSTTYPE}" = "x86_64" ]; then
-		wget ${WGET_ARGS} https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/ccache-${CCACHE_VERSION}-linux-x86_64.tar.xz
-		tar xf ccache-${CCACHE_VERSION}-linux-x86_64.tar.xz -C /opt
-		ln -s /opt/ccache-${CCACHE_VERSION}-linux-x86_64/ccache /usr/local/bin
-		rm ccache-${CCACHE_VERSION}-linux-x86_64.tar.xz
-	fi
+	CCACHE_BASENAME=ccache-${CCACHE_VERSION}-linux-${HOSTTYPE}-glibc
+	wget ${WGET_ARGS} https://github.com/ccache/ccache/releases/download/v${CCACHE_VERSION}/${CCACHE_BASENAME}.tar.xz
+	tar xf ${CCACHE_BASENAME}.tar.xz -C /opt
+	ln -s /opt/${CCACHE_BASENAME}/ccache /usr/local/bin
+	rm ${CCACHE_BASENAME}.tar.xz
 EOF
 
 # Install Doxygen (x86 only)
@@ -288,6 +286,8 @@ RUN <<EOF
 	chmod ag+w . -R
 	ln -s /opt/bsim_west/bsim /opt/bsim
 EOF
+ENV BSIM_OUT_PATH=/opt/bsim
+ENV BSIM_COMPONENTS_PATH=/opt/bsim/components
 
 # Install sparse package for static analysis
 RUN <<EOF
@@ -312,18 +312,16 @@ RUN <<EOF
 	rm -f protoc-${PROTOC_VERSION}-linux-${PROTOC_HOSTTYPE}.zip
 EOF
 
-# Install renode (x86 only)
-# NOTE: Renode is currently only available for x86_64 host.
+# Install renode
 # We're using the portable version of Renode, which is self-contained and includes dotnet
 RUN <<EOF
-	if [ "${HOSTTYPE}" = "x86_64" ]; then
-		RENODE_FILE=renode-${RENODE_VERSION}.linux-portable-dotnet.tar.gz
-		wget ${WGET_ARGS} https://github.com/renode/renode/releases/download/v${RENODE_VERSION}/${RENODE_FILE}
-		mkdir -p /opt/renode
-		tar xf ${RENODE_FILE} -C /opt/renode --strip-components=1
-		rm ${RENODE_FILE}
-		pip3 install -r /opt/renode/tests/requirements.txt --no-cache-dir
-	fi
+	[ "${HOSTTYPE}" = "aarch64" ] && ARCH_SUFFIX="-arm64"
+	RENODE_FILE=renode-${RENODE_VERSION}.linux${ARCH_SUFFIX}-portable-dotnet.tar.gz
+	wget ${WGET_ARGS} https://github.com/renode/renode/releases/download/v${RENODE_VERSION}/${RENODE_FILE}
+	mkdir -p /opt/renode
+	tar xf ${RENODE_FILE} -C /opt/renode --strip-components=1
+	rm ${RENODE_FILE}
+	pip3 install -r /opt/renode/tests/requirements.txt --no-cache-dir
 EOF
 
 # Add renode to path, make sure not to use the host's path,
@@ -357,6 +355,13 @@ RUN <<EOF
 		rm FVP_Corstone_SSE-${corstone}.sh
 		ln -s /opt/fvps/Corstone-${corstone}/models/*/FVP_* /usr/local/bin
 	done
+
+	# Corstone-1000-A320 uses a different URL pattern (not SSE)
+	echo "Downloading Corstone-1000-A320 ${FVP_CORSTONE1000_A320_VERSION}"
+	wget ${WGET_ARGS} -O- https://developer.arm.com/-/cdn-downloads/permalink/FVPs-Corstone-IoT/Corstone-1000-with-Cortex-A320/FVP_Corstone_1000-A320_${FVP_CORSTONE1000_A320_VERSION}_Linux64${SUFFIX}.tgz | tar xz
+	./FVP_Corstone_1000-A320.sh --no-interactive --i-agree-to-the-contained-eula -d /opt/fvps/Corstone-1000-A320
+	rm FVP_Corstone_1000-A320.sh
+	ln -s /opt/fvps/Corstone-1000-A320/models/*/FVP_* /usr/local/bin
 
 	declare -A FVP_EXTRACTABLE=(
 		["RevC-2xAEMvA"]="${FVP_BASE_REVC_VERSION}"
